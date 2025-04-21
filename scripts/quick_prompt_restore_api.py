@@ -1,8 +1,13 @@
+import json
 import os
 
-from fastapi import FastAPI, Query
+import modules.shared as shared
+from fastapi import FastAPI, Query, status
+from fastapi.responses import JSONResponse
 
 import scripts.quick_prompt_env as env
+
+local_task = {}
 
 
 def _get_prompt_file(txt2img: bool):
@@ -13,7 +18,6 @@ def _get_prompt_file(txt2img: bool):
 def init_api_extension(app: FastAPI):
     @app.post('/quick-prompt-restore')
     async def save_prompt_date(payload: dict):
-        import json  # Ensure JSON module is imported
         required_fields = [
             "positive_prompt",
             "negative_prompt",
@@ -37,7 +41,6 @@ def init_api_extension(app: FastAPI):
         # Save the extracted fields to a local JSON file
         with open(_get_prompt_file(txt2img), "w") as file:
             json.dump(extracted_fields, file, indent=4)
-            print("Received JSON body:", payload)
 
         return {"status": "success", "message": "Prompt saved successfully"}
 
@@ -48,7 +51,6 @@ def init_api_extension(app: FastAPI):
     
         :return: JSON content of saved prompts or 404 if the file doesn't exist
         """
-        import json
         try:
             prompt_file = _get_prompt_file(txt2img)
             print(prompt_file)
@@ -62,3 +64,58 @@ def init_api_extension(app: FastAPI):
         except Exception as e:
             return {"status": "error", "message": f"An error occurred: {str(e)}"}, 404
 
+    @app.post('/save-local-task-id')
+    async def save_local_task_id(payload: dict):
+        required_fields = [
+            "key",
+            "value"
+        ]
+
+        # Validate the JSON body fields
+        if not all(field in payload for field in required_fields):
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"status": "error", "message": "Invalid request, missing required fields"}
+            )
+
+        extracted_fields = {field: payload[field] for field in required_fields}
+        local_task[extracted_fields["key"]] = extracted_fields["value"]
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={"status": "success", "message": "Local task Id saved successfully"}
+        )
+
+    @app.get('/get-local-task-id')
+    async def get_local_task_id(key: str = Query(..., description="Local task Id key to retrieve.")):
+        try:
+            value = local_task.get(key)
+            has_time_start = hasattr(shared, 'state') and hasattr(shared.state,
+                                                                  'time_start') and shared.state.time_start is not None
+
+            print(f'shared.state.time_start: {shared.state.time_start}')
+            print(f'has_time_start: {has_time_start}')
+            print(f'local_task: {local_task}')
+            print(f'shared.state: {shared.state}')
+
+            if not has_time_start:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={"status": "error", "message": f"has_time_start is {has_time_start}"}
+                )
+
+            if key in local_task:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "success", "message": "Local task Id retrieved successfully", "data": value}
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={"status": "error", "message": f"Key not available"}
+                )
+        except Exception as e:
+            return JSONResponse(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                content={"status": "error", "message": f"An error occurred: {str(e)}"}
+            )
