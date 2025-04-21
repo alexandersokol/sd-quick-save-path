@@ -1,9 +1,11 @@
 function moveQuickRestoreButtons() {
     let tools_txt2img = gradioApp().getElementById("txt2img_tools").querySelector("div");
     tools_txt2img.appendChild(document.getElementById("txt2img_quick_prompt_restore_button"));
+    tools_txt2img.appendChild(document.getElementById("txt2img_quick_progress_restore_button"));
 
     let tools_img2img = gradioApp().getElementById("img2img_tools").querySelector("div");
     tools_img2img.appendChild(document.getElementById("img2img_quick_prompt_restore_button"));
+    tools_img2img.appendChild(document.getElementById("img2img_quick_progress_restore_button"));
 }
 
 function findInputValue(parentDivId) {
@@ -99,14 +101,24 @@ async function restorePromptData(isTxt2Img) {
     }
 }
 
+function restoreProgressState(isTxt2Img) {
+    if (isTxt2Img) {
+        showRestoreProgressButton('txt2img', true);
+    } else {
+        showRestoreProgressButton('img2img', true);
+    }
+}
+
 onUiLoaded(() => {
     moveQuickRestoreButtons()
+
     const originalTxt2imgButton = document.getElementById("txt2img_generate");
     if (originalTxt2imgButton) {
         originalTxt2imgButton.addEventListener('click', (event) => {
             savePromptInputs(true).then(r => "Data saved successfully");
         })
     }
+
     const originalImg2imgButton = document.getElementById("img2img_generate");
     if (originalImg2imgButton) {
         originalImg2imgButton.addEventListener('click', (event) => {
@@ -122,5 +134,15 @@ onUiLoaded(() => {
     const img2imgRestoreButton = document.getElementById("img2img_quick_prompt_restore_button")
     img2imgRestoreButton.addEventListener('click', (event) => {
         restorePromptData(false).then(r => "Data saved successfully");
+    })
+
+    const txt2imgRestoreProgressButton = document.getElementById("txt2img_quick_progress_restore_button")
+    txt2imgRestoreProgressButton.addEventListener('click', (event) => {
+        restoreProgressState(true)
+    })
+
+    const img2imgRestoreProgressButton = document.getElementById("img2img_quick_progress_restore_button")
+    img2imgRestoreProgressButton.addEventListener('click', (event) => {
+        restoreProgressState(false)
     })
 })
