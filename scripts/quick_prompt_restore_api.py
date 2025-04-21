@@ -124,11 +124,11 @@ def init_api_extension(app: FastAPI):
     @app.get('/get-current-task-id')
     async def get_current_task_id():
         try:
-            if progress.current_task_id is not None:
+            if progress.current_task is not None:
                 return JSONResponse(
                     status_code=status.HTTP_200_OK,
                     content={"status": "success", "message": "Local task Id retrieved successfully",
-                             "data": progress.current_task_id}
+                             "data": progress.current_task}
                 )
             else:
                 return JSONResponse(
@@ -137,6 +137,7 @@ def init_api_extension(app: FastAPI):
                 )
 
         except Exception as e:
+            print(e)
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"status": "error", "message": f"An error occurred: {str(e)}"}

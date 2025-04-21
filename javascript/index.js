@@ -228,10 +228,12 @@ async function getCurrentProgressData() {
                 onProgressReceived(res)
             }, function (err) {
                 onProgressError()
+                throw new Error(`Progress update error`);
             })
 
     } catch (error) {
         onProgressError()
+        throw new Error(`Progress update error`);
     }
 }
 
@@ -270,10 +272,10 @@ async function progressPollLoop() {
 
     try {
         await getCurrentProgressData()
+        setTimeout(progressPollLoop, 1000);
     } catch (err) {
-        console.warn("[Poll] Request failed:", err);
+        setTimeout(progressPollLoop, 5000);
     }
-    setTimeout(progressPollLoop, 1000); // wait 1s before next poll
 }
 
 onUiLoaded(() => {
