@@ -6,6 +6,9 @@ function moveQuickRestoreButtons() {
     let tools_img2img = gradioApp().getElementById("img2img_tools").querySelector("div");
     tools_img2img.appendChild(document.getElementById("img2img_quick_prompt_restore_button"));
     tools_img2img.appendChild(document.getElementById("img2img_quick_progress_restore_button"));
+
+    let quicksettings = gradioApp().getElementById("quicksettings");
+    quicksettings.appendChild(document.getElementById("alternative_progress_row_container"));
 }
 
 function findInputValue(parentDivId) {
@@ -125,35 +128,8 @@ async function restorePromptData(isTxt2Img) {
     }
 }
 
-async function checkInternalProgress(task_id) {
-    try {
-        const data = {
-            id_task: task_id,
-            live_preview: false,
-            // id_live_preview: 0
-        }
-
-        const response = await fetch(`${window.location.origin}/internal/progress`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        console.log("Internal progress check response:", response);
-
-    } catch (error) {
-        console.error("Failed to check internal progress:", error);
-    }
-}
-
 function request(url, data, handler, errorHandler) {
-    var xhr = new XMLHttpRequest();
+    const xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
     xhr.setRequestHeader("Content-Type", "application/json");
     xhr.onreadystatechange = function () {
@@ -171,22 +147,70 @@ function request(url, data, handler, errorHandler) {
             }
         }
     };
-    var js = JSON.stringify(data);
+    const js = JSON.stringify(data);
     xhr.send(js);
 }
 
-async function restoreProgressState(isTxt2Img) {
-    let task_key;
-    if (isTxt2Img) {
-        task_key = "txt2img_task_id"
-    } else {
-        task_key = "img2img_task_id"
+function wrapFunction(target, name, handler) {
+    const original = target[name];
+    target[name] = function (...args) {
+        handler(...args);
+        return original.apply(this, args);
+    };
+}
+
+function onProgressReceived(data) {
+    // {
+//     "active": true,
+//     "queued": false,
+//     "completed": false,
+//     "progress": 0.7421875,
+//     "eta": 50.87419579907467,
+//     "live_preview": null,
+//     "id_live_preview": -1,
+//     "textinfo": null
+// }
+
+    function formatEta(seconds) {
+        if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00';
+
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
 
-    try {
-        const url = new URL(`${window.location.origin}/get-local-task-id`);
-        url.searchParams.append("key", task_key);
+    let statusText = "Idle"
+    if (data.active === true) {
+        statusText = "In progress"
+    } else if (data.queued === true) {
+        statusText = "Queued"
+    } else if (data.completed === true) {
+        statusText = "Completed"
+    } else if (data.textinfo != null) {
+        statusText = data.textinfo
+    }
 
+    updateAlternativeProgress({
+        isProgressVisible: data.active,
+        percentage: Math.round((data.progress ?? 0) * 100),
+        ETA: data.eta != null ? formatEta(data.eta) : '',
+        status: statusText
+    });
+}
+
+function onProgressError() {
+    updateAlternativeProgress({
+        isProgressVisible: false,
+        percentage: 0,
+        ETA: '',
+        status: ''
+    });
+}
+
+async function getCurrentProgressData() {
+    try {
+        const url = new URL(`${window.location.origin}/get-current-task-id`);
         const response = await fetch(url, {
             method: 'GET',
         });
@@ -196,37 +220,60 @@ async function restoreProgressState(isTxt2Img) {
         }
 
         const fullData = await response.json();
-        const data = fullData.data;
-
-        console.log("Latest local task id fetched:", data);
-        // checkInternalProgress(data).then(r => "Internal progress checked successfully");
+        const currentTaskId = fullData.data;
 
         request("./internal/progress",
-            {id_task: data, live_preview: false},
+            {id_task: currentTaskId, live_preview: false},
             function (res) {
-                console.log("Internal progress checked successfully:", res);
-                if ((res.action === true || res.queued === true) && res.completed === false) {
-                    console.log("Internal progress is active or queued, restarting progress");
-                    localSet(task_key, data);
-                    restoreProgressTxt2img();
-                } else {
-                    console.log("Internal progress is completed, no need to restart");
-                }
+                onProgressReceived(res)
             }, function (err) {
-                console.error("Failed to check internal progress:", err);
+                onProgressError()
             })
 
     } catch (error) {
-        console.error("Failed to fetch local task id");
+        onProgressError()
     }
 }
 
-function wrapFunction(target, name, handler) {
-    const original = target[name];
-    target[name] = function (...args) {
-        handler(...args);
-        return original.apply(this, args);
-    };
+
+window.updateAlternativeProgress = function ({
+                                                 isProgressVisible = true,
+                                                 percentage = 0,
+                                                 ETA = '',
+                                                 status = ''
+                                             }) {
+    const barContainer = document.getElementById('alt-progress-bar-container');
+    const barFill = document.getElementById('alt-progress-bar-fill');
+    const barText = document.getElementById('alt-progress-bar-text');
+    const statusText = document.getElementById('alt-progress-status');
+
+    if (!barContainer || !barFill || !barText || !statusText) {
+        console.warn('Progress elements not found.');
+        return;
+    }
+
+    // Toggle visibility
+    barContainer.style.display = isProgressVisible ? 'flex' : 'none';
+
+    // Set progress value and text
+    barFill.style.width = `${percentage}%`;
+    barText.textContent = `${percentage}% ETA ${ETA}`;
+
+    // Set status
+    statusText.textContent = status;
+};
+
+let pollingCancelled = false;
+
+async function progressPollLoop() {
+    if (pollingCancelled || document.visibilityState !== "visible") return;
+
+    try {
+        await getCurrentProgressData()
+    } catch (err) {
+        console.warn("[Poll] Request failed:", err);
+    }
+    setTimeout(progressPollLoop, 1000); // wait 1s before next poll
 }
 
 onUiLoaded(() => {
@@ -258,12 +305,12 @@ onUiLoaded(() => {
 
     const txt2imgRestoreProgressButton = document.getElementById("txt2img_quick_progress_restore_button")
     txt2imgRestoreProgressButton.addEventListener('click', (event) => {
-        restoreProgressState(true).then(r => "state restored successfully");
+        getCurrentProgressData().then(r => "Current progress data fetched successfully");
     })
 
     const img2imgRestoreProgressButton = document.getElementById("img2img_quick_progress_restore_button")
     img2imgRestoreProgressButton.addEventListener('click', (event) => {
-        restoreProgressState(false).then(r => "state restored successfully");
+        getCurrentProgressData().then(r => "Current progress data fetched successfully");
     })
 
     wrapFunction(window, 'localSet', (k, v) => {
@@ -271,5 +318,12 @@ onUiLoaded(() => {
         saveLocalTaskId(k, v).then(r => "Local task id saved successfully");
     });
 
-    restoreProgressState(true).then(r => "state restored successfully");
+    if (document.visibilityState === "visible") progressPollLoop();
+
+    document.addEventListener("visibilitychange", () => {
+        pollingCancelled = document.visibilityState !== "visible";
+        if (!pollingCancelled) progressPollLoop();
+    });
 })
+
+

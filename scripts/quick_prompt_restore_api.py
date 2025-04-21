@@ -1,6 +1,7 @@
 import json
 import os
 
+import modules.progress as progress
 import modules.shared as shared
 from fastapi import FastAPI, Query, status
 from fastapi.responses import JSONResponse
@@ -117,5 +118,26 @@ def init_api_extension(app: FastAPI):
         except Exception as e:
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
+                content={"status": "error", "message": f"An error occurred: {str(e)}"}
+            )
+
+    @app.get('/get-current-task-id')
+    async def get_current_task_id():
+        try:
+            if progress.current_task_id is not None:
+                return JSONResponse(
+                    status_code=status.HTTP_200_OK,
+                    content={"status": "success", "message": "Local task Id retrieved successfully",
+                             "data": progress.current_task_id}
+                )
+            else:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"status": "error", "message": f"Current task not found"}
+                )
+
+        except Exception as e:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"status": "error", "message": f"An error occurred: {str(e)}"}
             )
